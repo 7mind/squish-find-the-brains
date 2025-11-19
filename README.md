@@ -72,8 +72,7 @@ Create `lockfile-config.json`:
 {
   "sbt_runs": [
     {"args": [";reload plugins; update; reload return"]},
-    {"args": ["compile"]},
-    {"args": ["assembly"]}
+    {"args": ["+update", "+compile"]}
   ]
 }
 ```
