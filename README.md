@@ -26,7 +26,10 @@ This approach avoids fixed-output derivations (FODs) and provides fully reproduc
   outputs = { self, nixpkgs, flake-utils, sbt-nix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        };
 
         coursierCache = sbt-nix.lib.mkCoursierCache {
           inherit pkgs;
