@@ -1,0 +1,11 @@
+# Nix
+result
+result-*
+
+# sbt
+target/
+project/target/
+project/project/
+
+# direnv
+.direnv/

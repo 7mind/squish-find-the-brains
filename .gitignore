@@ -1,0 +1,20 @@
+# Nix
+result
+result-*
+
+# sbt
+target/
+project/target/
+project/project/
+
+# IDE
+.idea/
+.bsp/
+.metals/
+.vscode/
+
+# direnv
+.direnv/
+
+# OS
+.DS_Store

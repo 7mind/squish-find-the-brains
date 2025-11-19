@@ -1,0 +1,6 @@
+{
+  "sbt_runs": [
+    {"args": ["compile"]},
+    {"args": ["assembly"]}
+  ]
+}
