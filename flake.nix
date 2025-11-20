@@ -125,7 +125,7 @@
         };
 
         # Package the lockfile generator script
-        generateLockfile = pkgs.writeScriptBin "sbt-nix-lockfile" ''
+        generateLockfile = pkgs.writeScriptBin "squish-lockfile" ''
           #!${pkgs.python3}/bin/python3
           ${builtins.readFile ./scripts/generate-lockfile.py}
         '';
@@ -140,11 +140,11 @@
         apps = {
           generate-lockfile = {
             type = "app";
-            program = "${generateLockfile}/bin/sbt-nix-lockfile";
+            program = "${generateLockfile}/bin/squish-lockfile";
           };
           default = {
             type = "app";
-            program = "${generateLockfile}/bin/sbt-nix-lockfile";
+            program = "${generateLockfile}/bin/squish-lockfile";
           };
         };
 

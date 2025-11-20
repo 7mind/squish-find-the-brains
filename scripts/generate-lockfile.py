@@ -150,7 +150,7 @@ def generate_lockfile(project_dir: Path, config: Config, keep_temp: bool = False
     """Generate lockfile for the sbt project."""
 
     if keep_temp:
-        temp_dir = tempfile.mkdtemp(prefix="sbt-nix-lockfile-")
+        temp_dir = tempfile.mkdtemp(prefix="squish-lockfile-")
         temp_home = Path(temp_dir)
         log(f"=== Debug mode: temp directory will be kept at {temp_home} ===")
     else:
