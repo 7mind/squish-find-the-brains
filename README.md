@@ -2,8 +2,8 @@
 
 [![CI](https://github.com/7mind/squish-find-the-brains/actions/workflows/ci.yml/badge.svg)](https://github.com/7mind/squish-find-the-brains/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Nix](https://img.shields.io/badge/Built%20with-Nix-5277C3.svg?logo=nixos&logoColor=white)](https://builtwithnix.org)
 [![Nix Flake](https://img.shields.io/badge/Nix-Flake-blue.svg)](https://nixos.wiki/wiki/Flakes)
-[![Built with Nix](https://builtwithnix.org/badge.svg)](https://builtwithnix.org)
 
 Reusable Nix flake for building sbt projects with lockfile-based dependency management.
 
