@@ -254,6 +254,9 @@ def _generate_lockfile_impl(project_dir: Path, config: Config, temp_home: Path) 
     }
 
 
+DEFAULT_LOCKFILE_NAME = "deps.lock.json"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate lockfile for sbt projects"
@@ -262,6 +265,17 @@ def main() -> None:
         "config",
         type=Path,
         help="Path to JSON config file with sbt_runs definition"
+    )
+    parser.add_argument(
+        "-o", "--output",
+        type=Path,
+        default=Path(DEFAULT_LOCKFILE_NAME),
+        help=f"Output lockfile path (default: {DEFAULT_LOCKFILE_NAME})"
+    )
+    parser.add_argument(
+        "-n", "--dry-run",
+        action="store_true",
+        help="Print to stdout only, do not write to file"
     )
     parser.add_argument(
         "--keep-temp",
@@ -274,9 +288,13 @@ def main() -> None:
     project_dir = Path.cwd()
     lockfile = generate_lockfile(project_dir, config, keep_temp=args.keep_temp)
 
-    # Output JSON to stdout
-    json.dump(lockfile, sys.stdout, indent=2)
-    print()  # Final newline
+    lockfile_json = json.dumps(lockfile, indent=2) + "\n"
+
+    if not args.dry_run:
+        args.output.write_text(lockfile_json)
+        log(f"Wrote lockfile to {args.output}")
+
+    sys.stdout.write(lockfile_json)
 
 
 if __name__ == "__main__":

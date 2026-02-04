@@ -87,7 +87,7 @@ the `{"args": [";reload plugins; update; reload return"]},` line is especially i
 ### 3. Generate lockfile
 
 ```bash
-nix run github:7mind/squish-find-the-brains -- lockfile-config.json > deps.lock.json
+nix run github:7mind/squish-find-the-brains -- lockfile-config.json -o deps.lock.json
 ```
 
 ### 4. Build
@@ -165,7 +165,7 @@ The lockfile is a JSON file with the following structure:
 nix develop
 
 # Generate lockfile
-python scripts/generate-lockfile.py lockfile-config.json > deps.lock.json
+python scripts/generate-lockfile.py lockfile-config.json -o deps.lock.json
 
 # Build
 nix build
@@ -179,7 +179,7 @@ The `test/` directory contains a sample project demonstrating usage:
 cd test
 
 # Generate lockfile
-nix develop ..#default --command python ../scripts/generate-lockfile.py lockfile-config.json > deps.lock.json
+nix develop ..#default --command python ../scripts/generate-lockfile.py lockfile-config.json -o deps.lock.json
 
 # Build with local squish-find-the-brains
 nix build --override-input squish-find-the-brains path:..
