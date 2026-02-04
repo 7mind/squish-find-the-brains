@@ -29,13 +29,30 @@ class SbtRun:
         self.args = args
 
 
+class ArtifactFetch:
+    """Configuration for fetching an artifact with optional classifiers."""
+
+    def __init__(self, coord: str, classifiers: list[str] | None = None) -> None:
+        if not coord:
+            raise ValueError("ArtifactFetch requires a coord")
+        self.coord = coord
+        self.classifiers = classifiers or []
+
+
 class Config:
     """Configuration for lockfile generation."""
 
-    def __init__(self, sbt_runs: list[SbtRun]) -> None:
+    def __init__(
+        self,
+        sbt_runs: list[SbtRun],
+        shell_commands: list[list[str]] | None = None,
+        fetch_artifacts: list[ArtifactFetch] | None = None,
+    ) -> None:
         if not sbt_runs:
             raise ValueError("Config requires at least one sbt_runs entry")
         self.sbt_runs = sbt_runs
+        self.shell_commands = shell_commands or []
+        self.fetch_artifacts = fetch_artifacts or []
 
     @staticmethod
     def load(config_path: Path) -> "Config":
@@ -60,7 +77,30 @@ class Config:
 
             sbt_runs.append(SbtRun(run_data["args"]))
 
-        return Config(sbt_runs)
+        shell_commands = []
+        if "shell_commands" in data:
+            if not isinstance(data["shell_commands"], list):
+                raise ValueError("'shell_commands' must be an array")
+            for i, cmd in enumerate(data["shell_commands"]):
+                if not isinstance(cmd, list):
+                    raise ValueError(f"shell_commands[{i}] must be an array of strings")
+                shell_commands.append(cmd)
+
+        fetch_artifacts = []
+        if "fetch_artifacts" in data:
+            if not isinstance(data["fetch_artifacts"], list):
+                raise ValueError("'fetch_artifacts' must be an array")
+            for i, fetch_data in enumerate(data["fetch_artifacts"]):
+                if not isinstance(fetch_data, dict):
+                    raise ValueError(f"fetch_artifacts[{i}] must be an object")
+                if "coord" not in fetch_data:
+                    raise ValueError(f"fetch_artifacts[{i}] must contain 'coord' string")
+                classifiers = fetch_data.get("classifiers", [])
+                if not isinstance(classifiers, list):
+                    raise ValueError(f"fetch_artifacts[{i}].classifiers must be an array")
+                fetch_artifacts.append(ArtifactFetch(fetch_data["coord"], classifiers))
+
+        return Config(sbt_runs, shell_commands, fetch_artifacts)
 
 
 def log(message: str) -> None:
@@ -194,6 +234,47 @@ def fetch_bridge_sources(cache_dir: Path, bridges: list[tuple[str, str]], env: d
                     log(f"    {line}")
 
 
+def fetch_configured_artifacts(
+    cache_dir: Path, fetch_artifacts: list[ArtifactFetch], env: dict
+) -> None:
+    """Fetch explicitly configured artifacts with optional classifiers."""
+    if not fetch_artifacts:
+        return
+
+    log("=== Fetching configured artifacts ===")
+
+    for artifact in fetch_artifacts:
+        log(f"  Fetching {artifact.coord}")
+
+        # Fetch main artifact and transitive dependencies
+        result = subprocess.run(
+            ["cs", "fetch", artifact.coord],
+            env={**env, "COURSIER_CACHE": str(cache_dir)},
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            log(f"  Warning: Failed to fetch {artifact.coord}: {result.stderr}")
+
+        # Fetch each classifier (e.g., sources, javadoc)
+        for classifier in artifact.classifiers:
+            log(f"    Fetching classifier: {classifier}")
+            result = subprocess.run(
+                ["cs", "fetch", f"--classifier={classifier}", artifact.coord],
+                env={**env, "COURSIER_CACHE": str(cache_dir)},
+                capture_output=True,
+                text=True,
+            )
+
+            if result.returncode != 0:
+                log(f"    Warning: Failed to fetch {classifier} for {artifact.coord}: {result.stderr}")
+            else:
+                for line in result.stdout.strip().split('\n'):
+                    if line:
+                        log(f"      {line}")
+
+
 def path_to_url(path: Path, cache_dir: Path) -> str:
     """Convert cache path to URL."""
     # Path structure: cache_dir/[cache/]https/repo.example.com/path/to/artifact
@@ -241,13 +322,19 @@ def _generate_lockfile_impl(project_dir: Path, config: Config, temp_home: Path) 
     sbt_global.mkdir(parents=True)
     sbt_boot.mkdir(parents=True)
 
-    # Environment for sbt
+    # Environment for sbt and other tools
     env = os.environ.copy()
     env["HOME"] = str(temp_home)
     env["COURSIER_CACHE"] = str(coursier_cache)
     env["SBT_GLOBAL_BASE"] = str(sbt_global)
     env["SBT_BOOT_DIRECTORY"] = str(sbt_boot)
     env["SBT_OPTS"] = f"-Dsbt.boot.directory={sbt_boot} -Dsbt.coursier.home={coursier_cache}"
+
+    # Override user.home for all JVM processes (ammonite, etc.)
+    java_opts = f"-Duser.home={temp_home}"
+    if "_JAVA_OPTIONS" in env:
+        java_opts = f"{env['_JAVA_OPTIONS']} {java_opts}"
+    env["_JAVA_OPTIONS"] = java_opts
 
     log("=== Phase 1: Populating caches ===")
     log(f"Home: {temp_home}")
@@ -260,6 +347,22 @@ def _generate_lockfile_impl(project_dir: Path, config: Config, temp_home: Path) 
         shutil.rmtree(target_dir)
     if project_target.exists():
         shutil.rmtree(project_target)
+
+    # Run shell commands before sbt (e.g., code generators)
+    for i, cmd in enumerate(config.shell_commands, 1):
+        # Expand environment variables in command arguments
+        expanded_cmd = [os.path.expandvars(arg.replace("$HOME", env["HOME"])) for arg in cmd]
+        log(f"Running shell command ({i}/{len(config.shell_commands)}): {' '.join(expanded_cmd)}")
+        result = subprocess.run(
+            expanded_cmd,
+            env=env,
+            cwd=project_dir,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            log(f"Shell command failed:\n{result.stdout}\n{result.stderr}")
+            raise RuntimeError(f"Shell command failed: {' '.join(expanded_cmd)}")
 
     # Run sbt commands from config
     for i, sbt_run in enumerate(config.sbt_runs, 1):
@@ -284,6 +387,9 @@ def _generate_lockfile_impl(project_dir: Path, config: Config, temp_home: Path) 
     bridges = find_compiler_bridges(coursier_cache)
     if bridges:
         fetch_bridge_sources(coursier_cache, bridges, env)
+
+    # Fetch any explicitly configured artifacts
+    fetch_configured_artifacts(coursier_cache, config.fetch_artifacts, env)
 
     log("=== Phase 2: Generating lockfile ===")
 
