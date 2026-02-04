@@ -131,6 +131,69 @@ def assert_no_ivy_artifacts(ivy_cache: Path) -> None:
         )
 
 
+def find_compiler_bridges(cache_dir: Path) -> list[tuple[str, str]]:
+    """Find compiler-bridge artifacts in cache and return (scala_version, bridge_version) tuples."""
+    bridges = []
+
+    # sbt stores artifacts in cache_dir/cache/https/repo1.maven.org/maven2/org/scala-sbt/
+    bridge_base = cache_dir / "cache" / "https" / "repo1.maven.org" / "maven2" / "org" / "scala-sbt"
+
+    if not bridge_base.exists():
+        return bridges
+
+    for bridge_dir in bridge_base.glob("compiler-bridge_*"):
+        scala_ver = bridge_dir.name.replace("compiler-bridge_", "")
+        for version_dir in bridge_dir.iterdir():
+            if version_dir.is_dir():
+                bridges.append((scala_ver, version_dir.name))
+
+    return bridges
+
+
+def fetch_bridge_sources(cache_dir: Path, bridges: list[tuple[str, str]], env: dict) -> None:
+    """Fetch compiler-bridge sources and dependencies using coursier CLI.
+
+    sbt compiles the compiler-bridge from sources but doesn't cache the sources jar
+    in the coursier cache. We need to explicitly fetch them for offline builds.
+    We also fetch main artifacts since sources have transitive dependencies.
+    """
+    if not bridges:
+        return
+
+    log("=== Fetching compiler-bridge sources ===")
+
+    for scala_ver, bridge_ver in bridges:
+        coord = f"org.scala-sbt:compiler-bridge_{scala_ver}:{bridge_ver}"
+        log(f"  Fetching sources and deps for {coord}")
+
+        # First fetch main artifacts (transitive dependencies)
+        result = subprocess.run(
+            ["cs", "fetch", coord],
+            env={**env, "COURSIER_CACHE": str(cache_dir)},
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            log(f"  Warning: Failed to fetch deps for {coord}: {result.stderr}")
+
+        # Then fetch sources
+        result = subprocess.run(
+            ["cs", "fetch", "--sources", coord],
+            env={**env, "COURSIER_CACHE": str(cache_dir)},
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            log(f"  Warning: Failed to fetch sources for {coord}: {result.stderr}")
+        else:
+            # Log the fetched source files
+            for line in result.stdout.strip().split('\n'):
+                if line and 'sources' in line:
+                    log(f"    {line}")
+
+
 def path_to_url(path: Path, cache_dir: Path) -> str:
     """Convert cache path to URL."""
     # Path structure: cache_dir/[cache/]https/repo.example.com/path/to/artifact
@@ -217,6 +280,11 @@ def _generate_lockfile_impl(project_dir: Path, config: Config, temp_home: Path) 
             log(f"sbt failed:\n{result.stdout}\n{result.stderr}")
             raise RuntimeError(f"sbt command failed: {' '.join(cmd)}")
 
+    # Fetch compiler-bridge sources (sbt compiles these but doesn't cache the sources)
+    bridges = find_compiler_bridges(coursier_cache)
+    if bridges:
+        fetch_bridge_sources(coursier_cache, bridges, env)
+
     log("=== Phase 2: Generating lockfile ===")
 
     # Assert no Ivy artifacts (modern sbt uses Coursier only)
@@ -242,6 +310,15 @@ def _generate_lockfile_impl(project_dir: Path, config: Config, temp_home: Path) 
 
         if i % 100 == 0:
             log(f"  Processed {i} artifacts...")
+
+    # Deduplicate entries (cs fetch and sbt may cache to different paths)
+    seen_urls = set()
+    unique_entries = []
+    for entry in entries:
+        if entry["url"] not in seen_urls:
+            seen_urls.add(entry["url"])
+            unique_entries.append(entry)
+    entries = unique_entries
 
     # Sort entries by URL for deterministic output
     entries.sort(key=lambda e: e["url"])
