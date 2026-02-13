@@ -18,6 +18,8 @@ from pathlib import Path
 
 NIX_BASE32_ALPHABET = "0123456789abcdfghijklmnpqrsvwxyz"
 HASH_READ_CHUNK_SIZE = 65536
+COURSIER_ARTIFACT_SUFFIXES = (".jar", ".pom", ".xml")
+MAVEN_METADATA_FILE_NAME = "maven-metadata.xml"
 
 
 class SbtRun:
@@ -152,7 +154,11 @@ def find_coursier_artifacts(cache_dir: Path) -> list[Path]:
 
         for path in https_dir.rglob("*"):
             # Include Maven artifacts (.jar, .pom) and Ivy artifacts (.xml for ivy.xml)
-            if path.is_file() and path.suffix in (".jar", ".pom", ".xml"):
+            if not path.is_file():
+                continue
+            if path.name == MAVEN_METADATA_FILE_NAME:
+                continue
+            if path.suffix in COURSIER_ARTIFACT_SUFFIXES:
                 artifacts.append(path)
 
     return sorted(artifacts)
