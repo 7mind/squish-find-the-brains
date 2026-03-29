@@ -58,14 +58,28 @@
             setupScript = ''
               export HOME=$(mktemp -d)
 
+              # On macOS, the nix build user's home is /var/empty which is read-only.
+              # The JVM resolves user.home from getpwuid(), not $HOME, so tools that
+              # use System.getProperty("user.home") try to write to /var/empty/Library.
+              # JAVA_TOOL_OPTIONS overrides user.home for regular JVM processes.
+              # GraalVM native images (e.g. scala-cli) ignore JAVA_TOOL_OPTIONS, so
+              # we override every directory env var they check to avoid the fallback
+              # to user.home + /Library/... entirely.
+              export JAVA_TOOL_OPTIONS="$JAVA_TOOL_OPTIONS -Duser.home=\"$HOME\""
+              export SCALA_CLI_HOME="$HOME/.scala-cli"
+              export COURSIER_CACHE="$HOME/.cache/coursier"
+              export COURSIER_ARCHIVE_CACHE="$HOME/.cache/coursier-arc"
+              export COURSIER_BIN_DIR="$HOME/.local/bin/coursier"
+              export COURSIER_CONFIG_DIR="$HOME/.config/coursier"
+              export COURSIER_JVM_CACHE="$HOME/.cache/coursier-jvm"
+
               # Set up Coursier cache - sbt uses .cache/coursier/https/...
-              mkdir -p $HOME/.cache
-              cp -r ${coursierCache} $HOME/.cache/coursier
-              chmod -R u+w $HOME/.cache/coursier
+              mkdir -p "$HOME/.cache"
+              cp -r ${coursierCache} "$HOME/.cache/coursier"
+              chmod -R u+w "$HOME/.cache/coursier"
 
               # Configure sbt for offline mode
               export COURSIER_MODE=offline
-              export COURSIER_CACHE=$HOME/.cache/coursier
               export SBT_OPTS="-Dsbt.offline=true -Dsbt.boot.directory=$HOME/.sbt/boot ${extraSbtOpts}"
             '';
 
